@@ -8,12 +8,14 @@ from Protocolo.Rede.protocolo import (
     criar_mensagem,
     criar_fila_offline,
     criar_resposta_adicionar_contato,
+    criar_resposta_remover_contato,
     desserializar,
     serializar
 )
 from Protocolo.Rede.dominio.servico_chat import ServicoChat
 from persistencia.repositorio_mensagens import RepositorioMensagens
 from persistencia.repositorio_usuarios import RepositorioUsuarios
+from persistencia.repositorio_contatos import RepositorioContatos
 
 
 HOST = "0.0.0.0"
@@ -21,19 +23,17 @@ PORTA = 8000
 
 repositorio_usuarios = RepositorioUsuarios()
 repositorio_mensagens = RepositorioMensagens()
+repositorio_contatos = RepositorioContatos()
 servico_chat = ServicoChat(repositorio_usuarios)
 usuarios_online = {}
 usuarios_online_lock = threading.Lock()
-contatos_por_usuario = {}
-contatos_lock = threading.Lock()
 
 
 def criar_lista_contatos_atualizada(usuario):
     with usuarios_online_lock:
         online = set(usuarios_online)
 
-    with contatos_lock:
-        contatos = set(contatos_por_usuario.get(usuario, set()))
+    contatos = repositorio_contatos.listar(usuario)
 
     return criar_lista_contatos([
         {
@@ -157,7 +157,6 @@ class ClientHandler(threading.Thread):
                 else:
                     usuarios_online[usuario] = self
                     self.usuario = usuario
-                    contatos_por_usuario.setdefault(usuario, set())
 
             self.enviar(resposta)
 
@@ -208,21 +207,13 @@ class ClientHandler(threading.Thread):
                 ))
                 return
 
-            with contatos_lock:
-                contatos = contatos_por_usuario.setdefault(
-                    self.usuario,
-                    set()
-                )
-
-                if contato in contatos:
-                    self.enviar(criar_resposta_adicionar_contato(
-                        False,
-                        contato,
-                        "Este contato já foi adicionado."
-                    ))
-                    return
-
-                contatos.add(contato)
+            if not repositorio_contatos.adicionar(self.usuario, contato):
+                self.enviar(criar_resposta_adicionar_contato(
+                    False,
+                    contato,
+                    "Este contato já foi adicionado."
+                ))
+                return
 
             with usuarios_online_lock:
                 contato_online = contato in usuarios_online
@@ -232,6 +223,29 @@ class ClientHandler(threading.Thread):
                 contato,
                 "Contato adicionado com sucesso.",
             ) | {"online": contato_online})
+            self.enviar(criar_lista_contatos_atualizada(self.usuario))
+            return
+
+        if tipo == "remover_contato":
+            contato = evento.get("contato", "").strip()
+
+            if self.usuario is None:
+                self.enviar(criar_resposta_remover_contato(
+                    False,
+                    contato,
+                    "É necessário fazer login antes de remover contatos."
+                ))
+                return
+
+            removido = repositorio_contatos.remover(self.usuario, contato)
+            self.enviar(criar_resposta_remover_contato(
+                removido,
+                contato,
+                "Contato removido com sucesso." if removido
+                else "Contato não encontrado na sua lista."
+            ))
+            if removido:
+                self.enviar(criar_lista_contatos_atualizada(self.usuario))
             return
 
         if tipo == "mensagem":
@@ -245,6 +259,16 @@ class ClientHandler(threading.Thread):
                 return
 
             destinatario = evento.get("destinatario")
+
+            if not destinatario or not repositorio_usuarios.usuario_existe(
+                destinatario
+            ):
+                self.enviar({
+                    "evento": "erro",
+                    "mensagem": "Destinatário não encontrado."
+                })
+                return
+
             mensagem = criar_mensagem(
                 self.usuario,
                 destinatario,

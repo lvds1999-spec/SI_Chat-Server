@@ -10,6 +10,8 @@ RESPOSTA_LOGIN = "resposta_login"
 LISTA_CONTATOS = "lista_contatos"
 ADICIONAR_CONTATO = "adicionar_contato"
 RESPOSTA_ADICIONAR_CONTATO = "resposta_adicionar_contato"
+REMOVER_CONTATO = "remover_contato"
+RESPOSTA_REMOVER_CONTATO = "resposta_remover_contato"
 
 MENSAGEM = "mensagem"
 ENTREGA_MENSAGEM = "entrega_mensagem"
@@ -156,4 +158,20 @@ def criar_fila_offline(mensagens):
     return {
         "evento": FILA_OFFLINE,
         "mensagens": mensagens
+    }
+
+
+def criar_remover_contato(contato):
+    return {
+        "evento": REMOVER_CONTATO,
+        "contato": contato
+    }
+
+
+def criar_resposta_remover_contato(sucesso, contato, mensagem):
+    return {
+        "evento": RESPOSTA_REMOVER_CONTATO,
+        "sucesso": sucesso,
+        "contato": contato,
+        "mensagem": mensagem
     }
