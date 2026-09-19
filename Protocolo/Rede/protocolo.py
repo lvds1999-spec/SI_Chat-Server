@@ -143,3 +143,24 @@ def criar_fila_offline(mensagens):
 
 if __name__ == "__main__":
     print("Servidor live.")
+
+
+def criar_registro(usuario, senha):
+
+    return {
+        "evento": REGISTRO,
+        "usuario": usuario,
+        "senha": senha
+    }
+
+
+def criar_resposta_registro(
+    sucesso,
+    mensagem
+):
+
+    return {
+        "evento": RESPOSTA_REGISTRO,
+        "sucesso": sucesso,
+        "mensagem": mensagem
+    }
