@@ -2,7 +2,6 @@ import socket
 import threading
 
 from Protocolo.Rede.protocolo import (
-    criar_resposta_adicionar_contato,
     criar_entrega_mensagem,
     criar_aviso_digitando,
     criar_lista_contatos,
@@ -29,16 +28,19 @@ contatos_por_usuario = {}
 contatos_lock = threading.Lock()
 
 
-def criar_lista_contatos_atualizada():
+def criar_lista_contatos_atualizada(usuario):
     with usuarios_online_lock:
         online = set(usuarios_online)
 
+    with contatos_lock:
+        contatos = set(contatos_por_usuario.get(usuario, set()))
+
     return criar_lista_contatos([
         {
-            "usuario": usuario,
-            "online": usuario in online
+            "usuario": contato,
+            "online": contato in online
         }
-        for usuario in repositorio_usuarios.listar_usuarios()
+        for contato in contatos
     ])
 
 
@@ -160,7 +162,7 @@ class ClientHandler(threading.Thread):
             self.enviar(resposta)
 
             if resposta["sucesso"]:
-                self.enviar(criar_lista_contatos_atualizada())
+                self.enviar(criar_lista_contatos_atualizada(usuario))
                 transmitir_para_conectados(
                     {
                         "evento": "presenca",
@@ -188,9 +190,17 @@ class ClientHandler(threading.Thread):
                 ))
                 return
 
-            contato = evento.get("contato")
+            contato = evento.get("contato", "").strip()
 
-            if not contato or not repositorio_usuarios.usuario_existe(contato):
+            if not contato or contato == self.usuario:
+                self.enviar(criar_resposta_adicionar_contato(
+                    False,
+                    contato,
+                    "Contato inválido."
+                ))
+                return
+
+            if not repositorio_usuarios.usuario_existe(contato):
                 self.enviar(criar_resposta_adicionar_contato(
                     False,
                     contato,
@@ -214,47 +224,13 @@ class ClientHandler(threading.Thread):
 
                 contatos.add(contato)
 
-            self.enviar(criar_resposta_adicionar_contato(
-                True,
-                contato,
-                "Contato adicionado com sucesso."
-            ))
-            return
-
-        if tipo == "adicionar_contato":
-            contato = evento.get("contato", "").strip()
-
-            if self.usuario is None:
-                self.enviar(criar_resposta_adicionar_contato(
-                    False,
-                    contato,
-                    "É necessário fazer login antes de adicionar contatos."
-                ))
-                return
-
-            if not contato or contato == self.usuario:
-                self.enviar(criar_resposta_adicionar_contato(
-                    False,
-                    contato,
-                    "Contato inválido."
-                ))
-                return
-
-            if not repositorio_usuarios.usuario_existe(contato):
-                self.enviar(criar_resposta_adicionar_contato(
-                    False,
-                    contato,
-                    "Usuário não encontrado no servidor."
-                ))
-                return
-
             with usuarios_online_lock:
                 contato_online = contato in usuarios_online
 
             self.enviar(criar_resposta_adicionar_contato(
                 True,
                 contato,
-                "Contato validado e adicionado.",
+                "Contato adicionado com sucesso.",
             ) | {"online": contato_online})
             return
 
