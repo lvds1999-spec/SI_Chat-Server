@@ -2,10 +2,13 @@ import socket
 import threading
 
 from Protocolo.Rede.protocolo import (
+    criar_resposta_adicionar_contato,
     criar_entrega_mensagem,
+    criar_aviso_digitando,
     criar_lista_contatos,
     criar_mensagem,
     criar_fila_offline,
+    criar_resposta_adicionar_contato,
     desserializar,
     serializar
 )
@@ -22,6 +25,8 @@ repositorio_mensagens = RepositorioMensagens()
 servico_chat = ServicoChat(repositorio_usuarios)
 usuarios_online = {}
 usuarios_online_lock = threading.Lock()
+contatos_por_usuario = {}
+contatos_lock = threading.Lock()
 
 
 def criar_lista_contatos_atualizada():
@@ -46,6 +51,15 @@ def enviar_evento(arquivo, evento):
 
     arquivo.write(dados)
     arquivo.flush()
+
+
+def transmitir_para_conectados(evento, ignorar=None):
+    with usuarios_online_lock:
+        clientes = list(usuarios_online.values())
+
+    for cliente in clientes:
+        if cliente is not ignorar:
+            cliente.enviar(evento)
 
 
 class ClientHandler(threading.Thread):
@@ -141,11 +155,20 @@ class ClientHandler(threading.Thread):
                 else:
                     usuarios_online[usuario] = self
                     self.usuario = usuario
+                    contatos_por_usuario.setdefault(usuario, set())
 
             self.enviar(resposta)
 
             if resposta["sucesso"]:
                 self.enviar(criar_lista_contatos_atualizada())
+                transmitir_para_conectados(
+                    {
+                        "evento": "presenca",
+                        "usuario": usuario,
+                        "online": True
+                    },
+                    ignorar=self
+                )
 
                 mensagens_offline = (
                     repositorio_mensagens.listar_e_remover(usuario)
@@ -154,6 +177,85 @@ class ClientHandler(threading.Thread):
                 if mensagens_offline:
                     self.enviar(criar_fila_offline(mensagens_offline))
 
+            return
+
+        if tipo == "adicionar_contato":
+            if self.usuario is None:
+                self.enviar(criar_resposta_adicionar_contato(
+                    False,
+                    evento.get("contato"),
+                    "É necessário fazer login antes de adicionar contatos."
+                ))
+                return
+
+            contato = evento.get("contato")
+
+            if not contato or not repositorio_usuarios.usuario_existe(contato):
+                self.enviar(criar_resposta_adicionar_contato(
+                    False,
+                    contato,
+                    "Contato não encontrado. Informe um usuário cadastrado."
+                ))
+                return
+
+            with contatos_lock:
+                contatos = contatos_por_usuario.setdefault(
+                    self.usuario,
+                    set()
+                )
+
+                if contato in contatos:
+                    self.enviar(criar_resposta_adicionar_contato(
+                        False,
+                        contato,
+                        "Este contato já foi adicionado."
+                    ))
+                    return
+
+                contatos.add(contato)
+
+            self.enviar(criar_resposta_adicionar_contato(
+                True,
+                contato,
+                "Contato adicionado com sucesso."
+            ))
+            return
+
+        if tipo == "adicionar_contato":
+            contato = evento.get("contato", "").strip()
+
+            if self.usuario is None:
+                self.enviar(criar_resposta_adicionar_contato(
+                    False,
+                    contato,
+                    "É necessário fazer login antes de adicionar contatos."
+                ))
+                return
+
+            if not contato or contato == self.usuario:
+                self.enviar(criar_resposta_adicionar_contato(
+                    False,
+                    contato,
+                    "Contato inválido."
+                ))
+                return
+
+            if not repositorio_usuarios.usuario_existe(contato):
+                self.enviar(criar_resposta_adicionar_contato(
+                    False,
+                    contato,
+                    "Usuário não encontrado no servidor."
+                ))
+                return
+
+            with usuarios_online_lock:
+                contato_online = contato in usuarios_online
+
+            self.enviar(criar_resposta_adicionar_contato(
+                True,
+                contato,
+                "Contato validado e adicionado.",
+            ) | {"online": contato_online})
             return
 
         if tipo == "mensagem":
@@ -192,6 +294,22 @@ class ClientHandler(threading.Thread):
             ))
             return
 
+        if tipo in ("digitando_inicio", "digitando_fim"):
+            if self.usuario is None:
+                return
+
+            destinatario = evento.get("destinatario")
+            with usuarios_online_lock:
+                cliente_destinatario = usuarios_online.get(destinatario)
+
+            if cliente_destinatario is not None:
+                cliente_destinatario.enviar(criar_aviso_digitando(
+                    self.usuario,
+                    destinatario,
+                    tipo == "digitando_inicio"
+                ))
+            return
+
         resposta = {
             "evento": "evento_recebido",
             "tipo": tipo
@@ -205,10 +323,19 @@ class ClientHandler(threading.Thread):
 
     def fechar(self):
 
+        usuario_desconectado = None
         if self.usuario is not None:
             with usuarios_online_lock:
                 if usuarios_online.get(self.usuario) is self:
                     usuarios_online.pop(self.usuario)
+                    usuario_desconectado = self.usuario
+
+        if usuario_desconectado is not None:
+            transmitir_para_conectados({
+                "evento": "presenca",
+                "usuario": usuario_desconectado,
+                "online": False
+            })
 
         try:
             self.arquivo.close()

@@ -8,6 +8,8 @@ LOGIN = "login"
 RESPOSTA_LOGIN = "resposta_login"
 
 LISTA_CONTATOS = "lista_contatos"
+ADICIONAR_CONTATO = "adicionar_contato"
+RESPOSTA_ADICIONAR_CONTATO = "resposta_adicionar_contato"
 
 MENSAGEM = "mensagem"
 ENTREGA_MENSAGEM = "entrega_mensagem"
@@ -76,6 +78,22 @@ def criar_lista_contatos(contatos):
     return {
         "evento": LISTA_CONTATOS,
         "contatos": contatos
+    }
+
+
+def criar_adicionar_contato(contato):
+    return {
+        "evento": ADICIONAR_CONTATO,
+        "contato": contato
+    }
+
+
+def criar_resposta_adicionar_contato(sucesso, contato, mensagem):
+    return {
+        "evento": RESPOSTA_ADICIONAR_CONTATO,
+        "sucesso": sucesso,
+        "contato": contato,
+        "mensagem": mensagem
     }
 
 
