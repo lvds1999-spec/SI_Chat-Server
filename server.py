@@ -9,6 +9,7 @@ from Protocolo.Rede.protocolo import (
     criar_fila_offline,
     criar_resposta_adicionar_contato,
     criar_resposta_remover_contato,
+    criar_resposta_logout,
     desserializar,
     serializar
 )
@@ -189,7 +190,15 @@ class ClientHandler(threading.Thread):
                 ))
                 return
 
-            contato = evento.get("contato", "").strip()
+            contato_recebido = evento.get(
+                "contato",
+                evento.get("usuario", "")
+            )
+            contato = (
+                contato_recebido.strip()
+                if isinstance(contato_recebido, str)
+                else ""
+            )
 
             if not contato or contato == self.usuario:
                 self.enviar(criar_resposta_adicionar_contato(
@@ -207,6 +216,9 @@ class ClientHandler(threading.Thread):
                 ))
                 return
 
+            with usuarios_online_lock:
+                contato_online = contato in usuarios_online
+
             if not repositorio_contatos.adicionar(self.usuario, contato):
                 self.enviar(criar_resposta_adicionar_contato(
                     False,
@@ -214,9 +226,6 @@ class ClientHandler(threading.Thread):
                     "Este contato já foi adicionado."
                 ))
                 return
-
-            with usuarios_online_lock:
-                contato_online = contato in usuarios_online
 
             self.enviar(criar_resposta_adicionar_contato(
                 True,
@@ -248,6 +257,21 @@ class ClientHandler(threading.Thread):
                 self.enviar(criar_lista_contatos_atualizada(self.usuario))
             return
 
+        if tipo == "logout":
+            usuario = self.usuario
+            if usuario is not None:
+                with usuarios_online_lock:
+                    if usuarios_online.get(usuario) is self:
+                        usuarios_online.pop(usuario)
+                self.usuario = None
+                transmitir_para_conectados({
+                    "evento": "presenca",
+                    "usuario": usuario,
+                    "online": False
+                })
+            self.enviar(criar_resposta_logout("Logout realizado com sucesso."))
+            return
+
         if tipo == "mensagem":
             if self.usuario is None:
                 self.enviar(
@@ -266,6 +290,13 @@ class ClientHandler(threading.Thread):
                 self.enviar({
                     "evento": "erro",
                     "mensagem": "Destinatário não encontrado."
+                })
+                return
+
+            if destinatario not in repositorio_contatos.listar(self.usuario):
+                self.enviar({
+                    "evento": "erro",
+                    "mensagem": "O destinatário não está na sua lista de contatos."
                 })
                 return
 

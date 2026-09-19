@@ -6,6 +6,8 @@ RESPOSTA_REGISTRO = "resposta_registro"
 
 LOGIN = "login"
 RESPOSTA_LOGIN = "resposta_login"
+LOGOUT = "logout"
+RESPOSTA_LOGOUT = "resposta_logout"
 
 LISTA_CONTATOS = "lista_contatos"
 ADICIONAR_CONTATO = "adicionar_contato"
@@ -173,5 +175,16 @@ def criar_resposta_remover_contato(sucesso, contato, mensagem):
         "evento": RESPOSTA_REMOVER_CONTATO,
         "sucesso": sucesso,
         "contato": contato,
+        "mensagem": mensagem
+    }
+
+
+def criar_logout():
+    return {"evento": LOGOUT}
+
+
+def criar_resposta_logout(mensagem):
+    return {
+        "evento": RESPOSTA_LOGOUT,
         "mensagem": mensagem
     }
