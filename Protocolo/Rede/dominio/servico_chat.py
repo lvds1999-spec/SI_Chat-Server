@@ -44,3 +44,22 @@ class ServicoChat:
             "sucesso": False,
             "mensagem": "Não foi possível registrar o usuário."
         }
+
+    def autenticar_usuario(self, usuario, senha):
+        autenticado = self.repositorio_usuarios.autenticar(
+            usuario,
+            senha
+        )
+
+        if autenticado:
+            return {
+                "evento": "resposta_login",
+                "sucesso": True,
+                "mensagem": "Login realizado com sucesso."
+            }
+
+        return {
+            "evento": "resposta_login",
+            "sucesso": False,
+            "mensagem": "Usuário ou senha inválidos."
+        }

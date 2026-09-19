@@ -76,3 +76,17 @@ class RepositorioUsuarios:
             self._salvar(usuarios)
 
             return True
+
+    def autenticar(self, usuario, senha):
+        with self._lock:
+            usuarios = self._carregar()
+            dados_usuario = usuarios.get(usuario)
+
+            return (
+                dados_usuario is not None
+                and dados_usuario["senha"] == senha
+            )
+
+    def listar_usuarios(self):
+        with self._lock:
+            return list(self._carregar().keys())

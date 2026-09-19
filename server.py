@@ -2,6 +2,7 @@ import socket
 import threading
 
 from Protocolo.Rede.protocolo import (
+    criar_lista_contatos,
     desserializar,
     serializar
 )
@@ -14,6 +15,21 @@ PORTA = 8000
 
 repositorio_usuarios = RepositorioUsuarios()
 servico_chat = ServicoChat(repositorio_usuarios)
+usuarios_online = set()
+usuarios_online_lock = threading.Lock()
+
+
+def criar_lista_contatos_atualizada():
+    with usuarios_online_lock:
+        online = set(usuarios_online)
+
+    return criar_lista_contatos([
+        {
+            "usuario": usuario,
+            "online": usuario in online
+        }
+        for usuario in repositorio_usuarios.listar_usuarios()
+    ])
 
 
 def enviar_evento(arquivo, evento):
@@ -38,6 +54,7 @@ class ClientHandler(threading.Thread):
         self.arquivo = socket_cliente.makefile(
             "rwb"
         )
+        self.usuario = None
 
     def run(self):
 
@@ -99,6 +116,39 @@ class ClientHandler(threading.Thread):
 
             return
 
+        if tipo == "login":
+            usuario = evento.get("usuario")
+            senha = evento.get("senha")
+            resposta = servico_chat.autenticar_usuario(
+                usuario,
+                senha
+            )
+
+            if not resposta["sucesso"]:
+                enviar_evento(self.arquivo, resposta)
+                return
+
+            with usuarios_online_lock:
+                if usuario in usuarios_online:
+                    resposta = {
+                        "evento": "resposta_login",
+                        "sucesso": False,
+                        "mensagem": "Usuário já está conectado."
+                    }
+                else:
+                    usuarios_online.add(usuario)
+                    self.usuario = usuario
+
+            enviar_evento(self.arquivo, resposta)
+
+            if resposta["sucesso"]:
+                enviar_evento(
+                    self.arquivo,
+                    criar_lista_contatos_atualizada()
+                )
+
+            return
+
         resposta = {
             "evento": "evento_recebido",
             "tipo": tipo
@@ -110,6 +160,10 @@ class ClientHandler(threading.Thread):
         )
 
     def fechar(self):
+
+        if self.usuario is not None:
+            with usuarios_online_lock:
+                usuarios_online.discard(self.usuario)
 
         try:
             self.arquivo.close()
