@@ -1,6 +1,8 @@
 import json
-import os
+from pathlib import Path
 import threading
+
+from persistencia.banco import conectar
 
 
 ARQUIVO_USUARIOS = "usuarios.json"
@@ -9,84 +11,59 @@ ARQUIVO_USUARIOS = "usuarios.json"
 class RepositorioUsuarios:
 
     def __init__(self):
-        self.arquivo = ARQUIVO_USUARIOS
         self._lock = threading.Lock()
+        self._migrar_json_se_necessario()
 
-        self._criar_arquivo_se_nao_existir()
+    def _migrar_json_se_necessario(self):
+        caminho = Path(__file__).resolve().parent.parent / ARQUIVO_USUARIOS
 
-    def _criar_arquivo_se_nao_existir(self):
+        if not caminho.exists():
+            return
 
-        if not os.path.exists(self.arquivo):
+        with self._lock, conectar() as conexao:
+            quantidade = conexao.execute(
+                "SELECT COUNT(*) FROM usuarios"
+            ).fetchone()[0]
 
-            with open(
-                self.arquivo,
-                "w",
-                encoding="utf-8"
-            ) as arquivo:
+            if quantidade != 0:
+                return
 
-                json.dump(
-                    {},
-                    arquivo,
-                    ensure_ascii=False,
-                    indent=4
-                )
-
-    def _carregar(self):
-
-        with open(
-            self.arquivo,
-            "r",
-            encoding="utf-8"
-        ) as arquivo:
-
-            return json.load(arquivo)
-
-    def _salvar(self, usuarios):
-
-        with open(
-            self.arquivo,
-            "w",
-            encoding="utf-8"
-        ) as arquivo:
-
-            json.dump(
-                usuarios,
-                arquivo,
-                ensure_ascii=False,
-                indent=4
+            dados = json.loads(caminho.read_text(encoding="utf-8"))
+            conexao.executemany(
+                "INSERT OR IGNORE INTO usuarios (usuario, senha) VALUES (?, ?)",
+                [(usuario, dados_usuario["senha"])
+                 for usuario, dados_usuario in dados.items()]
             )
 
     def usuario_existe(self, usuario):
-
-        usuarios = self._carregar()
-
-        return usuario in usuarios
+        with conectar() as conexao:
+            return conexao.execute(
+                "SELECT 1 FROM usuarios WHERE usuario = ?",
+                (usuario,)
+            ).fetchone() is not None
 
     def cadastrar(self, usuario, senha):
-        with self._lock:
-            usuarios = self._carregar()
-
-            if usuario in usuarios:
+        with self._lock, conectar() as conexao:
+            try:
+                conexao.execute(
+                    "INSERT INTO usuarios (usuario, senha) VALUES (?, ?)",
+                    (usuario, senha)
+                )
+            except Exception:
                 return False
-
-            usuarios[usuario] = {
-                "senha": senha
-            }
-
-            self._salvar(usuarios)
 
             return True
 
     def autenticar(self, usuario, senha):
-        with self._lock:
-            usuarios = self._carregar()
-            dados_usuario = usuarios.get(usuario)
-
-            return (
-                dados_usuario is not None
-                and dados_usuario["senha"] == senha
-            )
+        with conectar() as conexao:
+            return conexao.execute(
+                "SELECT 1 FROM usuarios WHERE usuario = ? AND senha = ?",
+                (usuario, senha)
+            ).fetchone() is not None
 
     def listar_usuarios(self):
-        with self._lock:
-            return list(self._carregar().keys())
+        with conectar() as conexao:
+            linhas = conexao.execute(
+                "SELECT usuario FROM usuarios ORDER BY usuario"
+            ).fetchall()
+            return [linha["usuario"] for linha in linhas]

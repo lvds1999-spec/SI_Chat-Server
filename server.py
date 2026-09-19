@@ -312,6 +312,11 @@ class ClientHandler(threading.Thread):
 
             if cliente_destinatario is not None:
                 cliente_destinatario.enviar(mensagem)
+                repositorio_mensagens.adicionar(
+                    destinatario,
+                    mensagem,
+                    status="entregue"
+                )
             else:
                 repositorio_mensagens.adicionar(
                     destinatario,

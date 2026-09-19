@@ -1,9 +1,9 @@
 import json
-import os
+from pathlib import Path
 import threading
 
 
-ARQUIVO_CONTATOS = "contatos.json"
+ARQUIVO_CONTATOS = Path(__file__).resolve().parents[1] / "contatos.json"
 
 
 class RepositorioContatos:
@@ -14,16 +14,16 @@ class RepositorioContatos:
         self._criar_arquivo_se_nao_existir()
 
     def _criar_arquivo_se_nao_existir(self):
-        if not os.path.exists(self.arquivo):
-            with open(self.arquivo, "w", encoding="utf-8") as arquivo:
+        if not self.arquivo.exists():
+            with self.arquivo.open("w", encoding="utf-8") as arquivo:
                 json.dump({}, arquivo, ensure_ascii=False, indent=4)
 
     def _carregar(self):
-        with open(self.arquivo, "r", encoding="utf-8") as arquivo:
+        with self.arquivo.open("r", encoding="utf-8") as arquivo:
             return json.load(arquivo)
 
     def _salvar(self, contatos):
-        with open(self.arquivo, "w", encoding="utf-8") as arquivo:
+        with self.arquivo.open("w", encoding="utf-8") as arquivo:
             json.dump(contatos, arquivo, ensure_ascii=False, indent=4)
 
     def listar(self, usuario):
