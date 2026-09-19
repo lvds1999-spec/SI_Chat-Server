@@ -7,8 +7,8 @@ Servidor TCP para aplicativo de chat.
 1. Abra um terminal na pasta do projeto.
 2. Execute:
 
-   C:/Users/VINICIUS/AppData/Local/Programs/Python/Python311/python.exe Socket/servidor_chat.py
+   python server.py
 
-3. O servidor ficará ouvindo na porta 5000.
+3. O servidor ficará ouvindo na porta 8000.
 
-Este servidor aceita conexões de clientes TCP em paralelo e envia as mensagens recebidas para todos os clientes conectados. Um cliente futuro pode ser implementado para se conectar a esse endereço e porta.
+O servidor aceita conexões TCP em paralelo, usando uma thread por cliente. Os eventos são enviados como JSON, delimitados por uma quebra de linha. O evento `registro` verifica se o usuário já existe, persiste nome e senha em `usuarios.json` e responde com `resposta_registro`.

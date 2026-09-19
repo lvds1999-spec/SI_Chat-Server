@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 
 
 ARQUIVO_USUARIOS = "usuarios.json"
@@ -9,6 +10,7 @@ class RepositorioUsuarios:
 
     def __init__(self):
         self.arquivo = ARQUIVO_USUARIOS
+        self._lock = threading.Lock()
 
         self._criar_arquivo_se_nao_existir()
 
@@ -61,16 +63,16 @@ class RepositorioUsuarios:
         return usuario in usuarios
 
     def cadastrar(self, usuario, senha):
+        with self._lock:
+            usuarios = self._carregar()
 
-        usuarios = self._carregar()
+            if usuario in usuarios:
+                return False
 
-        if usuario in usuarios:
-            return False
+            usuarios[usuario] = {
+                "senha": senha
+            }
 
-        usuarios[usuario] = {
-            "senha": senha
-        }
+            self._salvar(usuarios)
 
-        self._salvar(usuarios)
-
-        return True
+            return True

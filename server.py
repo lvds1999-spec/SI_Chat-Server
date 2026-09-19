@@ -5,10 +5,15 @@ from Protocolo.Rede.protocolo import (
     desserializar,
     serializar
 )
+from Protocolo.Rede.dominio.servico_chat import ServicoChat
+from persistencia.repositorio_usuarios import RepositorioUsuarios
 
 
 HOST = "0.0.0.0"
 PORTA = 8000
+
+repositorio_usuarios = RepositorioUsuarios()
+servico_chat = ServicoChat(repositorio_usuarios)
 
 
 def enviar_evento(arquivo, evento):
@@ -81,29 +86,28 @@ class ClientHandler(threading.Thread):
 
         tipo = evento.get("evento")
 
-        if tipo == "teste":
-
-            resposta = {
-                "evento": "resposta_teste",
-                "mensagem": "Servidor recebeu o evento."
-            }
+        if tipo == "registro":
+            resposta = servico_chat.registrar_usuario(
+                evento.get("usuario"),
+                evento.get("senha")
+            )
 
             enviar_evento(
                 self.arquivo,
                 resposta
             )
 
-        else:
+            return
 
-            resposta = {
-                "evento": "evento_recebido",
-                "tipo": tipo
-            }
+        resposta = {
+            "evento": "evento_recebido",
+            "tipo": tipo
+        }
 
-            enviar_evento(
-                self.arquivo,
-                resposta
-            )
+        enviar_evento(
+            self.arquivo,
+            resposta
+        )
 
     def fechar(self):
 
