@@ -2,51 +2,63 @@ import json
 from pathlib import Path
 import threading
 
+from persistencia.banco import conectar
 
-ARQUIVO_CONTATOS = Path(__file__).resolve().parents[1] / "contatos.json"
+
+ARQUIVO_CONTATOS = "contatos.json"
 
 
 class RepositorioContatos:
 
     def __init__(self):
-        self.arquivo = ARQUIVO_CONTATOS
         self._lock = threading.Lock()
-        self._criar_arquivo_se_nao_existir()
+        self._migrar_json_se_necessario()
 
-    def _criar_arquivo_se_nao_existir(self):
-        if not self.arquivo.exists():
-            with self.arquivo.open("w", encoding="utf-8") as arquivo:
-                json.dump({}, arquivo, ensure_ascii=False, indent=4)
+    def _migrar_json_se_necessario(self):
+        caminho = Path(__file__).resolve().parent.parent / ARQUIVO_CONTATOS
 
-    def _carregar(self):
-        with self.arquivo.open("r", encoding="utf-8") as arquivo:
-            return json.load(arquivo)
+        if not caminho.exists():
+            return
 
-    def _salvar(self, contatos):
-        with self.arquivo.open("w", encoding="utf-8") as arquivo:
-            json.dump(contatos, arquivo, ensure_ascii=False, indent=4)
+        with self._lock, conectar() as conexao:
+            quantidade = conexao.execute(
+                "SELECT COUNT(*) FROM contatos"
+            ).fetchone()[0]
+
+            if quantidade != 0:
+                return
+
+            dados = json.loads(caminho.read_text(encoding="utf-8"))
+            registros = [
+                (usuario, contato)
+                for usuario, contatos in dados.items()
+                for contato in contatos
+            ]
+            conexao.executemany(
+                "INSERT OR IGNORE INTO contatos (usuario, contato) VALUES (?, ?)",
+                registros
+            )
 
     def listar(self, usuario):
-        with self._lock:
-            contatos = self._carregar()
-            return list(contatos.get(usuario, []))
+        with conectar() as conexao:
+            linhas = conexao.execute(
+                "SELECT contato FROM contatos WHERE usuario = ? ORDER BY contato",
+                (usuario,)
+            ).fetchall()
+            return [linha["contato"] for linha in linhas]
 
     def adicionar(self, usuario, contato):
-        with self._lock:
-            contatos = self._carregar()
-            lista = contatos.setdefault(usuario, [])
-            if contato in lista:
-                return False
-            lista.append(contato)
-            self._salvar(contatos)
-            return True
+        with self._lock, conectar() as conexao:
+            cursor = conexao.execute(
+                "INSERT OR IGNORE INTO contatos (usuario, contato) VALUES (?, ?)",
+                (usuario, contato)
+            )
+            return cursor.rowcount == 1
 
     def remover(self, usuario, contato):
-        with self._lock:
-            contatos = self._carregar()
-            lista = contatos.get(usuario, [])
-            if contato not in lista:
-                return False
-            lista.remove(contato)
-            self._salvar(contatos)
-            return True
+        with self._lock, conectar() as conexao:
+            cursor = conexao.execute(
+                "DELETE FROM contatos WHERE usuario = ? AND contato = ?",
+                (usuario, contato)
+            )
+            return cursor.rowcount == 1

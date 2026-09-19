@@ -1,6 +1,19 @@
 {
-    "ana": [],
+    "ana": [
+        "lucas",
+        "lala"
+    ],
     "lucas": [
-        "ana"
+        "ana",
+        "lala"
+    ],
+    "lala": [
+        "lucas",
+        "ana",
+        "Lucas"
+    ],
+    "Lucas": [
+        "lala",
+        "lucas"
     ]
 }

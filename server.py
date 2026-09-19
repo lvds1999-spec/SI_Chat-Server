@@ -6,7 +6,6 @@ from Protocolo.Rede.protocolo import (
     criar_aviso_digitando,
     criar_lista_contatos,
     criar_mensagem,
-    criar_fila_offline,
     criar_resposta_adicionar_contato,
     criar_resposta_remover_contato,
     criar_resposta_logout,
@@ -176,8 +175,8 @@ class ClientHandler(threading.Thread):
                     repositorio_mensagens.listar_e_remover(usuario)
                 )
 
-                if mensagens_offline:
-                    self.enviar(criar_fila_offline(mensagens_offline))
+                for mensagem_offline in mensagens_offline:
+                    self.enviar(mensagem_offline)
 
             return
 
@@ -290,13 +289,6 @@ class ClientHandler(threading.Thread):
                 self.enviar({
                     "evento": "erro",
                     "mensagem": "Destinatário não encontrado."
-                })
-                return
-
-            if destinatario not in repositorio_contatos.listar(self.usuario):
-                self.enviar({
-                    "evento": "erro",
-                    "mensagem": "O destinatário não está na sua lista de contatos."
                 })
                 return
 

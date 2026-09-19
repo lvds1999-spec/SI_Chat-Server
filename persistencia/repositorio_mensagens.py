@@ -71,7 +71,7 @@ class RepositorioMensagens:
         with self._lock, conectar() as conexao:
             linhas = conexao.execute(
                 """
-                SELECT id, sender, recipient, timestamp, texto
+                SELECT id, sender, recipient, timestamp, texto, status
                 FROM mensagens
                 WHERE recipient = ? AND status = 'pendente'
                 ORDER BY id
@@ -91,10 +91,12 @@ class RepositorioMensagens:
             return [
                 {
                     "evento": "mensagem",
+                    "id": linha["id"],
                     "remetente": linha["sender"],
                     "destinatario": linha["recipient"],
                     "timestamp": linha["timestamp"],
-                    "texto": linha["texto"]
+                    "texto": linha["texto"],
+                    "status": "entregue"
                 }
                 for linha in linhas
             ]

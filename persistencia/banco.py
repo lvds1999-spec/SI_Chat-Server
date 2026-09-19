@@ -33,6 +33,14 @@ def inicializar():
 
             CREATE INDEX IF NOT EXISTS idx_mensagens_recipient_status
                 ON mensagens (recipient, status);
+
+            CREATE TABLE IF NOT EXISTS contatos (
+                usuario TEXT NOT NULL,
+                contato TEXT NOT NULL,
+                PRIMARY KEY (usuario, contato),
+                FOREIGN KEY (usuario) REFERENCES usuarios (usuario),
+                FOREIGN KEY (contato) REFERENCES usuarios (usuario)
+            );
             """
         )
 
