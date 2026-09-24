@@ -9,7 +9,8 @@ class ServicoChat:
     def registrar_usuario(
         self,
         usuario,
-        senha
+        senha,
+        chave_publica=None,
     ):
 
         # Verifica se o nome já está sendo utilizado.
@@ -27,7 +28,8 @@ class ServicoChat:
         cadastrado = (
             self.repositorio_usuarios.cadastrar(
                 usuario,
-                senha
+                senha,
+                chave_publica,
             )
         )
 

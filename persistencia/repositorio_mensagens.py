@@ -107,3 +107,12 @@ class RepositorioMensagens:
                 "UPDATE mensagens SET status = 'lido' WHERE id = ?",
                 (mensagem_id,)
             )
+
+    def descartar_pendentes(self, destinatario):
+        with self._lock, conectar() as conexao:
+            cursor = conexao.execute(
+                "DELETE FROM mensagens "
+                "WHERE recipient = ? AND status = 'pendente'",
+                (destinatario,)
+            )
+            return cursor.rowcount

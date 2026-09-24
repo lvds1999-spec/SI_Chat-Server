@@ -6,6 +6,8 @@ RESPOSTA_REGISTRO = "resposta_registro"
 
 LOGIN = "login"
 RESPOSTA_LOGIN = "resposta_login"
+DESAFIO_LOGIN = "desafio_login"
+LOGIN_ASSINATURA = "login_assinatura"
 LOGOUT = "logout"
 RESPOSTA_LOGOUT = "resposta_logout"
 
@@ -24,6 +26,7 @@ DIGITANDO_FIM = "digitando_fim"
 AVISO_DIGITANDO = "aviso_digitando"
 
 PRESENCA = "presenca"
+AVISO_NOVO_DISPOSITIVO = "aviso_novo_dispositivo"
 
 FILA_OFFLINE = "fila_offline"
 
@@ -65,12 +68,17 @@ def ler_eventos(arquivo, sessao):
         yield desserializar(dados)
 
 
-def criar_registro(usuario, senha):
-    return {
+def criar_registro(usuario, senha, algoritmo_assinatura=None, chave_publica=None):
+    evento = {
         "evento": REGISTRO,
         "usuario": usuario,
         "senha": senha
     }
+    if algoritmo_assinatura is not None:
+        evento["algoritmo_assinatura"] = algoritmo_assinatura
+    if chave_publica is not None:
+        evento["chave_publica"] = chave_publica
+    return evento
 
 
 def criar_resposta_registro(sucesso, mensagem):
@@ -81,12 +89,23 @@ def criar_resposta_registro(sucesso, mensagem):
     }
 
 
-def criar_login(usuario, senha):
-    return {
+def criar_login(
+    usuario,
+    senha=None,
+    algoritmo_assinatura=None,
+    chave_publica=None,
+):
+    evento = {
         "evento": LOGIN,
-        "usuario": usuario,
-        "senha": senha
+        "usuario": usuario
     }
+    if senha is not None:
+        evento["senha"] = senha
+    if algoritmo_assinatura is not None:
+        evento["algoritmo_assinatura"] = algoritmo_assinatura
+    if chave_publica is not None:
+        evento["chave_publica"] = chave_publica
+    return evento
 
 
 def criar_resposta_login(sucesso, mensagem):
@@ -213,4 +232,28 @@ def criar_resposta_logout(mensagem):
     return {
         "evento": RESPOSTA_LOGOUT,
         "mensagem": mensagem
+    }
+
+
+def criar_desafio_login(nonce, algoritmo_assinatura):
+    return {
+        "evento": DESAFIO_LOGIN,
+        "nonce": nonce,
+        "algoritmo_assinatura": algoritmo_assinatura,
+    }
+
+
+def criar_login_assinatura(assinatura):
+    return {
+        "evento": LOGIN_ASSINATURA,
+        "assinatura": assinatura,
+    }
+
+
+def criar_aviso_novo_dispositivo(usuario, algoritmo_assinatura, chave_publica):
+    return {
+        "evento": AVISO_NOVO_DISPOSITIVO,
+        "usuario": usuario,
+        "algoritmo_assinatura": algoritmo_assinatura,
+        "chave_publica": chave_publica,
     }

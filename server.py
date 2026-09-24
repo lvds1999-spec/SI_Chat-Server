@@ -1,9 +1,13 @@
+import base64
+import os
 import socket
 import threading
 
 from Protocolo.Rede.protocolo import (
     criar_entrega_mensagem,
     criar_aviso_digitando,
+    criar_aviso_novo_dispositivo,
+    criar_desafio_login,
     criar_lista_contatos,
     criar_lista_usuarios,
     criar_mensagem,
@@ -18,6 +22,11 @@ from persistencia.repositorio_mensagens import RepositorioMensagens
 from persistencia.repositorio_usuarios import RepositorioUsuarios
 from persistencia.repositorio_contatos import RepositorioContatos
 from src.seguranca import ErroSeguranca, SessaoSegura
+from src.seguranca.assinatura import (
+    chave_publica_corresponde,
+    normalizar_chave_publica,
+    verificar_assinatura,
+)
 
 
 HOST = "0.0.0.0"
@@ -84,6 +93,7 @@ class ClientHandler(threading.Thread):
         self.usuario = None
         self.envio_lock = threading.Lock()
         self.sessao_segura = SessaoSegura("servidor")
+        self.login_desafio = None
 
     def run(self):
 
@@ -134,9 +144,26 @@ class ClientHandler(threading.Thread):
         tipo = evento.get("evento")
 
         if tipo == "registro":
+            algoritmo = evento.get("algoritmo_assinatura")
+            chave_publica = evento.get("chave_publica")
+            try:
+                chave_publica = (
+                    normalizar_chave_publica(algoritmo, chave_publica)
+                    if chave_publica is not None
+                    else None
+                )
+            except ValueError as erro:
+                self.enviar({
+                    "evento": "resposta_registro",
+                    "sucesso": False,
+                    "mensagem": str(erro),
+                })
+                return
+
             resposta = servico_chat.registrar_usuario(
                 evento.get("usuario"),
-                evento.get("senha")
+                evento.get("senha"),
+                chave_publica,
             )
 
             self.enviar(resposta)
@@ -146,6 +173,8 @@ class ClientHandler(threading.Thread):
         if tipo == "login":
             usuario = evento.get("usuario")
             senha = evento.get("senha")
+            algoritmo = evento.get("algoritmo_assinatura")
+            chave_publica = evento.get("chave_publica")
 
             if self.usuario is not None:
                 self.enviar({
@@ -155,46 +184,90 @@ class ClientHandler(threading.Thread):
                 })
                 return
 
-            resposta = servico_chat.autenticar_usuario(
-                usuario,
-                senha
-            )
+            try:
+                chave_apresentada = normalizar_chave_publica(
+                    algoritmo,
+                    chave_publica,
+                )
+            except ValueError:
+                self.enviar({
+                    "evento": "resposta_login",
+                    "sucesso": False,
+                    "mensagem": "Chave pública e algoritmo são obrigatórios.",
+                })
+                return
 
+            chave_atual = repositorio_usuarios.obter_chave_publica(usuario)
+            if chave_publica_corresponde(
+                chave_atual,
+                algoritmo,
+                chave_publica,
+            ):
+                nonce = os.urandom(32)
+                self.login_desafio = {
+                    "usuario": usuario,
+                    "nonce": nonce,
+                    "algoritmo_assinatura": algoritmo,
+                    "chave_publica": chave_publica,
+                }
+                self.enviar(criar_desafio_login(
+                    base64.b64encode(nonce).decode("ascii"),
+                    algoritmo,
+                ))
+                return
+
+            resposta = servico_chat.autenticar_usuario(usuario, senha)
             if not resposta["sucesso"]:
                 self.enviar(resposta)
                 return
 
-            with usuarios_online_lock:
-                cliente_anterior = usuarios_online.get(usuario)
-                usuarios_online[usuario] = self
-                self.usuario = usuario
+            repositorio_usuarios.atualizar_chave_publica(
+                usuario,
+                chave_apresentada,
+            )
+            self._concluir_login(
+                usuario,
+                novo_dispositivo=chave_atual != chave_apresentada,
+                algoritmo=algoritmo,
+                chave_publica=chave_publica,
+            )
+            return
 
-                if cliente_anterior is not None and cliente_anterior is not self:
-                    cliente_anterior.usuario = None
+        if tipo == "login_assinatura":
+            desafio = self.login_desafio
+            self.login_desafio = None
+            if desafio is None:
+                self.enviar({
+                    "evento": "resposta_login",
+                    "sucesso": False,
+                    "mensagem": "Nenhum desafio de login está pendente.",
+                })
+                return
 
-            if cliente_anterior is not None and cliente_anterior is not self:
-                cliente_anterior.fechar()
-
-            self.enviar(resposta)
-
-            if resposta["sucesso"]:
-                self.enviar(criar_lista_usuarios_atualizada())
-                self.enviar(criar_lista_contatos_atualizada(usuario))
-                transmitir_para_conectados(
-                    {
-                        "evento": "presenca",
-                        "usuario": usuario,
-                        "online": True
-                    },
-                    ignorar=self
+            try:
+                assinatura_valida = verificar_assinatura(
+                    desafio["algoritmo_assinatura"],
+                    desafio["chave_publica"],
+                    desafio["nonce"],
+                    evento.get("assinatura"),
                 )
+            except (ValueError, TypeError):
+                assinatura_valida = False
 
-                mensagens_offline = (
-                    repositorio_mensagens.listar_e_remover(usuario)
-                )
+            if not assinatura_valida:
+                self.enviar({
+                    "evento": "resposta_login",
+                    "sucesso": False,
+                    "mensagem": "Assinatura de login inválida.",
+                })
+                return
 
-                for mensagem_offline in mensagens_offline:
-                    self.enviar(mensagem_offline)
+            self._concluir_login(
+                desafio["usuario"],
+                novo_dispositivo=False,
+                algoritmo=desafio["algoritmo_assinatura"],
+                chave_publica=desafio["chave_publica"],
+            )
 
             return
 
@@ -379,6 +452,74 @@ class ClientHandler(threading.Thread):
         }
 
         self.enviar(resposta)
+
+    def _concluir_login(
+        self,
+        usuario,
+        novo_dispositivo,
+        algoritmo,
+        chave_publica,
+    ):
+        with usuarios_online_lock:
+            cliente_anterior = usuarios_online.get(usuario)
+            usuarios_online[usuario] = self
+            self.usuario = usuario
+
+            if cliente_anterior is not None and cliente_anterior is not self:
+                cliente_anterior.usuario = None
+
+        if cliente_anterior is not None and cliente_anterior is not self:
+            cliente_anterior.fechar()
+
+        self.enviar({
+            "evento": "resposta_login",
+            "sucesso": True,
+            "mensagem": "Login realizado com sucesso.",
+            "novo_dispositivo": novo_dispositivo,
+        })
+        self.enviar(criar_lista_usuarios_atualizada())
+        self.enviar(criar_lista_contatos_atualizada(usuario))
+        transmitir_para_conectados(
+            {
+                "evento": "presenca",
+                "usuario": usuario,
+                "online": True
+            },
+            ignorar=self,
+        )
+
+        if novo_dispositivo:
+            repositorio_mensagens.descartar_pendentes(usuario)
+            self._avisar_novo_dispositivo(
+                usuario,
+                algoritmo,
+                chave_publica,
+            )
+            return
+
+        mensagens_offline = repositorio_mensagens.listar_e_remover(usuario)
+        for mensagem_offline in mensagens_offline:
+            self.enviar(mensagem_offline)
+
+    def _avisar_novo_dispositivo(self, usuario, algoritmo, chave_publica):
+        aviso = criar_aviso_novo_dispositivo(
+            usuario,
+            algoritmo,
+            chave_publica,
+        )
+        contatos = repositorio_contatos.listar(usuario)
+        with usuarios_online_lock:
+            clientes = [
+                usuarios_online.get(contato)
+                for contato in contatos
+            ]
+
+        for cliente in clientes:
+            if cliente is not None:
+                try:
+                    cliente.enviar(aviso)
+                except (ConnectionError, OSError):
+                    pass
 
     def enviar(self, evento):
         with self.envio_lock:

@@ -21,4 +21,6 @@ Linhas JSON inválidas ou eventos que não sejam objetos recebem uma resposta `e
 
 Após aceitar uma conexão TCP, o servidor executa um handshake DHE efêmero. Os eventos seguintes passam por `enviar_evento` e `ler_eventos` em envelopes autenticados com HMAC-SHA256 e cifrados com AES-256-CTR, usando chaves derivadas por HKDF-SHA256. A sessão renova as chaves após 100 mensagens ou 60 minutos de atividade, no próximo ciclo de transporte.
 
+Usuários usam `senha_hash` Argon2id e `salt` aleatório. Um login deve informar `algoritmo_assinatura` (`ed25519` ou `rsa-pss`) e `chave_publica`. Para uma chave já cadastrada, o servidor envia `desafio_login` com um nonce e aceita somente `login_assinatura` válida. Para uma chave nova, a senha autoriza a troca; as mensagens offline pendentes são descartadas e os contatos online recebem `aviso_novo_dispositivo`.
+
 Os dados também são mantidos no banco SQLite `chat.db`, criado automaticamente na raiz do projeto. A tabela `usuarios` armazena usuários e senhas, e a tabela `contatos` mantém a lista permanente de cada usuário. A tabela `mensagens` possui `id`, `sender`, `recipient`, `timestamp`, `texto` e `status` (`pendente`, `entregue` ou `lido`). Mensagens pendentes são entregues no próximo login. O arquivo `chat.db` pode ser aberto no VS Code com uma extensão SQLite.

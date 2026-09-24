@@ -19,7 +19,9 @@ def inicializar():
             CREATE TABLE IF NOT EXISTS usuarios (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 usuario TEXT NOT NULL UNIQUE,
-                senha TEXT NOT NULL
+                senha_hash BLOB,
+                salt BLOB,
+                chave_publica TEXT
             );
 
             CREATE TABLE IF NOT EXISTS mensagens (
@@ -48,7 +50,24 @@ def inicializar():
             );
             """
         )
+        _garantir_colunas_usuarios(conexao)
         _migrar_contatos_para_ids(conexao)
+
+
+def _garantir_colunas_usuarios(conexao):
+    colunas = {
+        linha["name"]
+        for linha in conexao.execute("PRAGMA table_info(usuarios)")
+    }
+    for nome, tipo in (
+        ("senha_hash", "BLOB"),
+        ("salt", "BLOB"),
+        ("chave_publica", "TEXT"),
+    ):
+        if nome not in colunas:
+            conexao.execute(
+                f"ALTER TABLE usuarios ADD COLUMN {nome} {tipo}"
+            )
 
 
 def _migrar_contatos_para_ids(conexao):
