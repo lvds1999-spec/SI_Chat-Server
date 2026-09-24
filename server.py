@@ -320,12 +320,13 @@ class ClientHandler(threading.Thread):
                 cliente_destinatario = usuarios_online.get(destinatario)
 
             if cliente_destinatario is not None:
-                cliente_destinatario.enviar(mensagem)
-                repositorio_mensagens.adicionar(
-                    destinatario,
-                    mensagem,
-                    status="entregue"
-                )
+                try:
+                    cliente_destinatario.enviar(mensagem)
+                except (ConnectionError, OSError):
+                    repositorio_mensagens.adicionar(
+                        destinatario,
+                        mensagem
+                    )
             else:
                 repositorio_mensagens.adicionar(
                     destinatario,
