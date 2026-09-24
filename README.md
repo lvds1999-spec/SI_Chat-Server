@@ -15,4 +15,6 @@ O servidor aceita conexões TCP em paralelo, usando uma thread por cliente. Os e
 
 O evento `login` verifica nome e senha. Após um login bem-sucedido, o cliente recebe `lista_usuarios`, contendo todos os usuários cadastrados e o campo booleano `online` de cada um. Alterações posteriores de conexão são comunicadas por eventos `presenca`.
 
+Os eventos `digitando_inicio` e `digitando_fim` são efêmeros: o servidor apenas os encaminha se o destinatário estiver conectado e não os armazena para entrega posterior. O cliente deve remover o indicador de digitação após 2 segundos sem nova atualização.
+
 Os dados também são mantidos no banco SQLite `chat.db`, criado automaticamente na raiz do projeto. A tabela `usuarios` armazena usuários e senhas, e a tabela `contatos` mantém a lista permanente de cada usuário. A tabela `mensagens` possui `id`, `sender`, `recipient`, `timestamp`, `texto` e `status` (`pendente`, `entregue` ou `lido`). Mensagens pendentes são entregues no próximo login. O arquivo `chat.db` pode ser aberto no VS Code com uma extensão SQLite.

@@ -349,11 +349,27 @@ class ClientHandler(threading.Thread):
                 cliente_destinatario = usuarios_online.get(destinatario)
 
             if cliente_destinatario is not None:
-                cliente_destinatario.enviar(criar_aviso_digitando(
-                    self.usuario,
-                    destinatario,
-                    tipo == "digitando_inicio"
-                ))
+                try:
+                    cliente_destinatario.enviar(criar_aviso_digitando(
+                        self.usuario,
+                        destinatario,
+                        tipo == "digitando_inicio"
+                    ))
+                except (ConnectionError, OSError):
+                    with usuarios_online_lock:
+                        removido = (
+                            usuarios_online.get(destinatario)
+                            is cliente_destinatario
+                        )
+                        if removido:
+                            usuarios_online.pop(destinatario)
+
+                    if removido:
+                        transmitir_para_conectados({
+                            "evento": "presenca",
+                            "usuario": destinatario,
+                            "online": False
+                        })
             return
 
         resposta = {
