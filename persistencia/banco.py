@@ -30,6 +30,7 @@ def inicializar():
                 recipient TEXT NOT NULL,
                 timestamp TEXT,
                 texto TEXT NOT NULL,
+                payload TEXT,
                 status TEXT NOT NULL DEFAULT 'pendente'
                     CHECK (status IN ('pendente', 'entregue', 'lido'))
             );
@@ -51,6 +52,7 @@ def inicializar():
             """
         )
         _garantir_colunas_usuarios(conexao)
+        _garantir_colunas_mensagens(conexao)
         _migrar_contatos_para_ids(conexao)
 
 
@@ -68,6 +70,15 @@ def _garantir_colunas_usuarios(conexao):
             conexao.execute(
                 f"ALTER TABLE usuarios ADD COLUMN {nome} {tipo}"
             )
+
+
+def _garantir_colunas_mensagens(conexao):
+    colunas = {
+        linha["name"]
+        for linha in conexao.execute("PRAGMA table_info(mensagens)")
+    }
+    if "payload" not in colunas:
+        conexao.execute("ALTER TABLE mensagens ADD COLUMN payload TEXT")
 
 
 def _migrar_contatos_para_ids(conexao):

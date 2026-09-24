@@ -8,6 +8,9 @@ LOGIN = "login"
 RESPOSTA_LOGIN = "resposta_login"
 DESAFIO_LOGIN = "desafio_login"
 LOGIN_ASSINATURA = "login_assinatura"
+SOLICITAR_CHAVE_PUBLICA = "solicitar_chave_publica"
+RESPOSTA_CHAVE_PUBLICA = "resposta_chave_publica"
+HANDSHAKE_CONCLUIDO = "handshake_concluido"
 LOGOUT = "logout"
 RESPOSTA_LOGOUT = "resposta_logout"
 
@@ -256,4 +259,39 @@ def criar_aviso_novo_dispositivo(usuario, algoritmo_assinatura, chave_publica):
         "usuario": usuario,
         "algoritmo_assinatura": algoritmo_assinatura,
         "chave_publica": chave_publica,
+    }
+
+
+def criar_solicitacao_chave_publica(usuario):
+    return {
+        "evento": SOLICITAR_CHAVE_PUBLICA,
+        "usuario": usuario,
+    }
+
+
+def criar_resposta_chave_publica(
+    sucesso,
+    usuario,
+    algoritmo_assinatura=None,
+    chave_publica=None,
+    mensagem=None,
+):
+    resposta = {
+        "evento": RESPOSTA_CHAVE_PUBLICA,
+        "sucesso": sucesso,
+        "usuario": usuario,
+    }
+    if algoritmo_assinatura is not None:
+        resposta["algoritmo_assinatura"] = algoritmo_assinatura
+    if chave_publica is not None:
+        resposta["chave_publica"] = chave_publica
+    if mensagem is not None:
+        resposta["mensagem"] = mensagem
+    return resposta
+
+
+def criar_handshake_concluido(usuario):
+    return {
+        "evento": HANDSHAKE_CONCLUIDO,
+        "usuario": usuario,
     }

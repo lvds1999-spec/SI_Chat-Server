@@ -37,31 +37,34 @@ class RepositorioMensagens:
                         destinatario,
                         mensagem.get("timestamp"),
                         mensagem.get("texto", ""),
+                        None,
                         "pendente"
                     ))
 
             conexao.executemany(
                 """
                 INSERT INTO mensagens
-                    (sender, recipient, timestamp, texto, status)
-                VALUES (?, ?, ?, ?, ?)
+                    (sender, recipient, timestamp, texto, payload, status)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 registros
             )
 
     def adicionar(self, destinatario, mensagem, status="pendente"):
+        payload = json.dumps(mensagem, ensure_ascii=False)
         with self._lock, conectar() as conexao:
             cursor = conexao.execute(
                 """
                 INSERT INTO mensagens
-                    (sender, recipient, timestamp, texto, status)
-                VALUES (?, ?, ?, ?, ?)
+                    (sender, recipient, timestamp, texto, payload, status)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    mensagem.get("remetente", ""),
+                    mensagem.get("remetente") or "",
                     destinatario,
                     mensagem.get("timestamp"),
-                    mensagem.get("texto", ""),
+                    mensagem.get("texto") or "",
+                    payload,
                     status
                 )
             )
@@ -71,7 +74,7 @@ class RepositorioMensagens:
         with self._lock, conectar() as conexao:
             linhas = conexao.execute(
                 """
-                SELECT id, sender, recipient, timestamp, texto, status
+                SELECT id, sender, recipient, timestamp, texto, payload, status
                 FROM mensagens
                 WHERE recipient = ? AND status = 'pendente'
                 ORDER BY id
@@ -88,8 +91,16 @@ class RepositorioMensagens:
                     ids
                 )
 
-            return [
-                {
+            mensagens = []
+            for linha in linhas:
+                if linha["payload"]:
+                    try:
+                        mensagens.append(json.loads(linha["payload"]))
+                        continue
+                    except json.JSONDecodeError:
+                        pass
+
+                mensagens.append({
                     "evento": "mensagem",
                     "id": linha["id"],
                     "remetente": linha["sender"],
@@ -97,9 +108,8 @@ class RepositorioMensagens:
                     "timestamp": linha["timestamp"],
                     "texto": linha["texto"],
                     "status": "entregue"
-                }
-                for linha in linhas
-            ]
+                })
+            return mensagens
 
     def marcar_lida(self, mensagem_id):
         with self._lock, conectar() as conexao:

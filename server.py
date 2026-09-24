@@ -8,6 +8,7 @@ from Protocolo.Rede.protocolo import (
     criar_aviso_digitando,
     criar_aviso_novo_dispositivo,
     criar_desafio_login,
+    criar_resposta_chave_publica,
     criar_lista_contatos,
     criar_lista_usuarios,
     criar_mensagem,
@@ -38,6 +39,29 @@ repositorio_contatos = RepositorioContatos()
 servico_chat = ServicoChat(repositorio_usuarios)
 usuarios_online = {}
 usuarios_online_lock = threading.Lock()
+handshakes_realizados = set()
+handshakes_lock = threading.Lock()
+
+
+def _chave_handshake(usuario_a, usuario_b):
+    return tuple(sorted((usuario_a, usuario_b)))
+
+
+def _handshake_existe(remetente, destinatario):
+    with handshakes_lock:
+        return _chave_handshake(remetente, destinatario) in handshakes_realizados
+
+
+def _registrar_handshake(remetente, destinatario):
+    with handshakes_lock:
+        handshakes_realizados.add(_chave_handshake(remetente, destinatario))
+
+
+def _limpar_handshakes(usuario):
+    with handshakes_lock:
+        handshakes_realizados.difference_update(
+            par for par in handshakes_realizados if usuario in par
+        )
 
 
 def criar_lista_contatos_atualizada(usuario):
@@ -168,6 +192,75 @@ class ClientHandler(threading.Thread):
 
             self.enviar(resposta)
 
+            return
+
+        if tipo in {
+            "solicitar_chave_publica",
+            "obter_chave_publica",
+            "distribuir_chave_publica",
+        }:
+            if self.usuario is None:
+                self.enviar(criar_resposta_chave_publica(
+                    False,
+                    evento.get("usuario"),
+                    mensagem="É necessário fazer login antes de consultar chaves.",
+                ))
+                return
+
+            usuario_alvo = evento.get(
+                "usuario",
+                evento.get("destinatario"),
+            )
+            chave = repositorio_usuarios.obter_chave_publica(usuario_alvo)
+            if not chave or ":" not in chave:
+                self.enviar(criar_resposta_chave_publica(
+                    False,
+                    usuario_alvo,
+                    mensagem="Usuário não possui chave pública cadastrada.",
+                ))
+                return
+
+            algoritmo, chave_publica = chave.split(":", 1)
+            self.enviar(criar_resposta_chave_publica(
+                True,
+                usuario_alvo,
+                algoritmo,
+                chave_publica,
+            ))
+            return
+
+        if tipo in {
+            "handshake_concluido",
+            "registrar_handshake",
+            "handshake",
+        }:
+            if self.usuario is None:
+                self.enviar({
+                    "evento": "erro",
+                    "codigo": "autenticacao_necessaria",
+                    "mensagem": "É necessário fazer login antes do handshake.",
+                })
+                return
+
+            destinatario = evento.get(
+                "usuario",
+                evento.get("destinatario"),
+            )
+            if not destinatario or not repositorio_usuarios.usuario_existe(
+                destinatario
+            ) or destinatario == self.usuario:
+                self.enviar({
+                    "evento": "erro",
+                    "codigo": "destinatario_invalido",
+                    "mensagem": "Destinatário de handshake inválido.",
+                })
+                return
+
+            _registrar_handshake(self.usuario, destinatario)
+            self.enviar({
+                "evento": "handshake_confirmado",
+                "usuario": destinatario,
+            })
             return
 
         if tipo == "login":
@@ -363,56 +456,7 @@ class ClientHandler(threading.Thread):
             return
 
         if tipo == "mensagem":
-            if self.usuario is None:
-                self.enviar(
-                    {
-                        "evento": "erro",
-                        "mensagem": "É necessário fazer login antes de enviar mensagens."
-                    }
-                )
-                return
-
-            destinatario = evento.get("destinatario")
-
-            if not destinatario or not repositorio_usuarios.usuario_existe(
-                destinatario
-            ):
-                self.enviar({
-                    "evento": "erro",
-                    "mensagem": "Destinatário não encontrado."
-                })
-                return
-
-            mensagem = criar_mensagem(
-                self.usuario,
-                destinatario,
-                evento.get("timestamp"),
-                evento.get("texto")
-            )
-
-            with usuarios_online_lock:
-                cliente_destinatario = usuarios_online.get(destinatario)
-
-            if cliente_destinatario is not None:
-                try:
-                    cliente_destinatario.enviar(mensagem)
-                except (ConnectionError, OSError):
-                    repositorio_mensagens.adicionar(
-                        destinatario,
-                        mensagem
-                    )
-            else:
-                repositorio_mensagens.adicionar(
-                    destinatario,
-                    mensagem
-                )
-
-            self.enviar(criar_entrega_mensagem(
-                self.usuario,
-                destinatario,
-                evento.get("timestamp")
-            ))
-            return
+            return self._tratar_mensagem(evento)
 
         if tipo in ("digitando_inicio", "digitando_fim"):
             if self.usuario is None:
@@ -453,6 +497,63 @@ class ClientHandler(threading.Thread):
 
         self.enviar(resposta)
 
+    def _tratar_mensagem(self, evento):
+        if self.usuario is None:
+            self.enviar({
+                "evento": "erro",
+                "mensagem": "É necessário fazer login antes de enviar mensagens."
+            })
+            return
+
+        destinatario = evento.get("destinatario")
+        if not destinatario or not repositorio_usuarios.usuario_existe(
+            destinatario
+        ):
+            self.enviar({
+                "evento": "erro",
+                "mensagem": "Destinatário não encontrado."
+            })
+            return
+
+        mensagem = dict(evento)
+        mensagem["remetente"] = self.usuario
+        mensagem["destinatario"] = destinatario
+
+        with usuarios_online_lock:
+            cliente_destinatario = usuarios_online.get(destinatario)
+
+        if cliente_destinatario is not None:
+            try:
+                cliente_destinatario.enviar(mensagem)
+            except (ConnectionError, OSError):
+                if not _handshake_existe(self.usuario, destinatario):
+                    self.enviar({
+                        "evento": "erro",
+                        "codigo": "handshake_ausente",
+                        "mensagem": (
+                            "Não existe handshake prévio com o destinatário."
+                        ),
+                    })
+                    return
+                repositorio_mensagens.adicionar(destinatario, mensagem)
+        else:
+            if not _handshake_existe(self.usuario, destinatario):
+                self.enviar({
+                    "evento": "erro",
+                    "codigo": "handshake_ausente",
+                    "mensagem": (
+                        "Não existe handshake prévio com o destinatário."
+                    ),
+                })
+                return
+            repositorio_mensagens.adicionar(destinatario, mensagem)
+
+        self.enviar(criar_entrega_mensagem(
+            self.usuario,
+            destinatario,
+            evento.get("timestamp")
+        ))
+
     def _concluir_login(
         self,
         usuario,
@@ -489,6 +590,7 @@ class ClientHandler(threading.Thread):
         )
 
         if novo_dispositivo:
+            _limpar_handshakes(usuario)
             repositorio_mensagens.descartar_pendentes(usuario)
             self._avisar_novo_dispositivo(
                 usuario,
