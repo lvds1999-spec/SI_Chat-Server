@@ -17,4 +17,6 @@ O evento `login` verifica nome e senha. Após um login bem-sucedido, o cliente r
 
 Os eventos `digitando_inicio` e `digitando_fim` são efêmeros: o servidor apenas os encaminha se o destinatário estiver conectado e não os armazena para entrega posterior. O cliente deve remover o indicador de digitação após 2 segundos sem nova atualização.
 
+Linhas JSON inválidas ou eventos que não sejam objetos recebem uma resposta `erro` e não derrubam o handler da conexão. Se o mesmo usuário autenticar em outro socket, a sessão anterior é fechada e o novo socket passa a ser a sessão ativa.
+
 Os dados também são mantidos no banco SQLite `chat.db`, criado automaticamente na raiz do projeto. A tabela `usuarios` armazena usuários e senhas, e a tabela `contatos` mantém a lista permanente de cada usuário. A tabela `mensagens` possui `id`, `sender`, `recipient`, `timestamp`, `texto` e `status` (`pendente`, `entregue` ou `lido`). Mensagens pendentes são entregues no próximo login. O arquivo `chat.db` pode ser aberto no VS Code com uma extensão SQLite.

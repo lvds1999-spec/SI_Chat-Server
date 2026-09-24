@@ -1,3 +1,4 @@
+import json
 import socket
 import threading
 
@@ -110,7 +111,21 @@ class ClientHandler(threading.Thread):
                 if not linha:
                     break
 
-                evento = desserializar(linha)
+                try:
+                    evento = desserializar(linha)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    self.enviar({
+                        "evento": "erro",
+                        "mensagem": "Evento malformado."
+                    })
+                    continue
+
+                if not isinstance(evento, dict):
+                    self.enviar({
+                        "evento": "erro",
+                        "mensagem": "Evento malformado."
+                    })
+                    continue
 
                 print(
                     f"[RECEBIDO] "
@@ -154,6 +169,15 @@ class ClientHandler(threading.Thread):
         if tipo == "login":
             usuario = evento.get("usuario")
             senha = evento.get("senha")
+
+            if self.usuario is not None:
+                self.enviar({
+                    "evento": "resposta_login",
+                    "sucesso": False,
+                    "mensagem": "Esta conexão já está autenticada."
+                })
+                return
+
             resposta = servico_chat.autenticar_usuario(
                 usuario,
                 senha
@@ -164,15 +188,15 @@ class ClientHandler(threading.Thread):
                 return
 
             with usuarios_online_lock:
-                if usuario in usuarios_online:
-                    resposta = {
-                        "evento": "resposta_login",
-                        "sucesso": False,
-                        "mensagem": "Usuário já está conectado."
-                    }
-                else:
-                    usuarios_online[usuario] = self
-                    self.usuario = usuario
+                cliente_anterior = usuarios_online.get(usuario)
+                usuarios_online[usuario] = self
+                self.usuario = usuario
+
+                if cliente_anterior is not None and cliente_anterior is not self:
+                    cliente_anterior.usuario = None
+
+            if cliente_anterior is not None and cliente_anterior is not self:
+                cliente_anterior.fechar()
 
             self.enviar(resposta)
 
