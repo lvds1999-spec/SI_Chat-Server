@@ -1,4 +1,3 @@
-import json
 import socket
 import threading
 
@@ -11,13 +10,14 @@ from Protocolo.Rede.protocolo import (
     criar_resposta_adicionar_contato,
     criar_resposta_remover_contato,
     criar_resposta_logout,
-    desserializar,
-    serializar
+    enviar_evento,
+    ler_eventos,
 )
 from Protocolo.Rede.dominio.servico_chat import ServicoChat
 from persistencia.repositorio_mensagens import RepositorioMensagens
 from persistencia.repositorio_usuarios import RepositorioUsuarios
 from persistencia.repositorio_contatos import RepositorioContatos
+from src.seguranca import ErroSeguranca, SessaoSegura
 
 
 HOST = "0.0.0.0"
@@ -61,17 +61,6 @@ def criar_lista_usuarios_atualizada():
     ])
 
 
-def enviar_evento(arquivo, evento):
-    """
-    Envia um evento JSON para o cliente.
-    """
-
-    dados = serializar(evento)
-
-    arquivo.write(dados)
-    arquivo.flush()
-
-
 def transmitir_para_conectados(evento, ignorar=None):
     with usuarios_online_lock:
         clientes = list(usuarios_online.values())
@@ -94,6 +83,7 @@ class ClientHandler(threading.Thread):
         )
         self.usuario = None
         self.envio_lock = threading.Lock()
+        self.sessao_segura = SessaoSegura("servidor")
 
     def run(self):
 
@@ -103,29 +93,9 @@ class ClientHandler(threading.Thread):
         )
 
         try:
+            self.sessao_segura.iniciar_servidor(self.arquivo)
 
-            while True:
-
-                linha = self.arquivo.readline()
-
-                if not linha:
-                    break
-
-                try:
-                    evento = desserializar(linha)
-                except (UnicodeDecodeError, json.JSONDecodeError):
-                    self.enviar({
-                        "evento": "erro",
-                        "mensagem": "Evento malformado."
-                    })
-                    continue
-
-                if not isinstance(evento, dict):
-                    self.enviar({
-                        "evento": "erro",
-                        "mensagem": "Evento malformado."
-                    })
-                    continue
+            for evento in ler_eventos(self.arquivo, self.sessao_segura):
 
                 print(
                     f"[RECEBIDO] "
@@ -134,11 +104,18 @@ class ClientHandler(threading.Thread):
 
                 self.processar_evento(evento)
 
-        except ConnectionError:
+        except (ConnectionError, OSError):
 
             print(
                 f"[DESCONECTADO] "
                 f"{self.endereco}"
+            )
+
+        except (ErroSeguranca, ValueError) as erro:
+
+            print(
+                f"[ERRO] "
+                f"{self.endereco}: {erro}"
             )
 
         except Exception as erro:
@@ -405,7 +382,7 @@ class ClientHandler(threading.Thread):
 
     def enviar(self, evento):
         with self.envio_lock:
-            enviar_evento(self.arquivo, evento)
+            enviar_evento(self.arquivo, evento, self.sessao_segura)
 
     def fechar(self):
 

@@ -47,6 +47,24 @@ def desserializar(dados):
     return json.loads(dados.decode("utf-8"))
 
 
+def enviar_evento(arquivo, evento, sessao):
+    """Serializa e envia um evento pelo transporte autenticado."""
+
+    sessao.enviar(arquivo, serializar(evento))
+
+
+def ler_eventos(arquivo, sessao):
+    """Le eventos cifrados ate o fechamento da conexao."""
+
+    while True:
+        try:
+            dados = sessao.receber(arquivo)
+        except ConnectionError:
+            return
+
+        yield desserializar(dados)
+
+
 def criar_registro(usuario, senha):
     return {
         "evento": REGISTRO,

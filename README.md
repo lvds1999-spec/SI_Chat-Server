@@ -19,4 +19,6 @@ Os eventos `digitando_inicio` e `digitando_fim` são efêmeros: o servidor apena
 
 Linhas JSON inválidas ou eventos que não sejam objetos recebem uma resposta `erro` e não derrubam o handler da conexão. Se o mesmo usuário autenticar em outro socket, a sessão anterior é fechada e o novo socket passa a ser a sessão ativa.
 
+Após aceitar uma conexão TCP, o servidor executa um handshake DHE efêmero. Os eventos seguintes passam por `enviar_evento` e `ler_eventos` em envelopes autenticados com HMAC-SHA256 e cifrados com AES-256-CTR, usando chaves derivadas por HKDF-SHA256. A sessão renova as chaves após 100 mensagens ou 60 minutos de atividade, no próximo ciclo de transporte.
+
 Os dados também são mantidos no banco SQLite `chat.db`, criado automaticamente na raiz do projeto. A tabela `usuarios` armazena usuários e senhas, e a tabela `contatos` mantém a lista permanente de cada usuário. A tabela `mensagens` possui `id`, `sender`, `recipient`, `timestamp`, `texto` e `status` (`pendente`, `entregue` ou `lido`). Mensagens pendentes são entregues no próximo login. O arquivo `chat.db` pode ser aberto no VS Code com uma extensão SQLite.
