@@ -10,6 +10,7 @@ LOGOUT = "logout"
 RESPOSTA_LOGOUT = "resposta_logout"
 
 LISTA_CONTATOS = "lista_contatos"
+LISTA_USUARIOS = "lista_usuarios"
 ADICIONAR_CONTATO = "adicionar_contato"
 RESPOSTA_ADICIONAR_CONTATO = "resposta_adicionar_contato"
 REMOVER_CONTATO = "remover_contato"
@@ -82,6 +83,13 @@ def criar_lista_contatos(contatos):
     return {
         "evento": LISTA_CONTATOS,
         "contatos": contatos
+    }
+
+
+def criar_lista_usuarios(usuarios):
+    return {
+        "evento": LISTA_USUARIOS,
+        "usuarios": usuarios
     }
 
 

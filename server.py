@@ -5,6 +5,7 @@ from Protocolo.Rede.protocolo import (
     criar_entrega_mensagem,
     criar_aviso_digitando,
     criar_lista_contatos,
+    criar_lista_usuarios,
     criar_mensagem,
     criar_resposta_adicionar_contato,
     criar_resposta_remover_contato,
@@ -41,6 +42,21 @@ def criar_lista_contatos_atualizada(usuario):
             "online": contato in online
         }
         for contato in contatos
+    ])
+
+
+def criar_lista_usuarios_atualizada():
+    usuarios = repositorio_usuarios.listar_usuarios()
+
+    with usuarios_online_lock:
+        online = set(usuarios_online)
+
+    return criar_lista_usuarios([
+        {
+            "usuario": usuario,
+            "online": usuario in online
+        }
+        for usuario in usuarios
     ])
 
 
@@ -161,6 +177,7 @@ class ClientHandler(threading.Thread):
             self.enviar(resposta)
 
             if resposta["sucesso"]:
+                self.enviar(criar_lista_usuarios_atualizada())
                 self.enviar(criar_lista_contatos_atualizada(usuario))
                 transmitir_para_conectados(
                     {
