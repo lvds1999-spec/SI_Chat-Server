@@ -50,7 +50,7 @@ class RepositorioMensagens:
                 registros
             )
 
-    def adicionar(self, destinatario, mensagem, status="pendente"):
+    def adicionar(self, destinatario, mensagem, status="enviado"):
         payload = json.dumps(mensagem, ensure_ascii=False)
         with self._lock, conectar() as conexao:
             cursor = conexao.execute(
@@ -70,32 +70,25 @@ class RepositorioMensagens:
             )
             return cursor.lastrowid
 
-    def listar_e_remover(self, destinatario):
+    def listar_pendentes(self, destinatario):
         with self._lock, conectar() as conexao:
             linhas = conexao.execute(
                 """
                 SELECT id, sender, recipient, timestamp, texto, payload, status
                 FROM mensagens
-                WHERE recipient = ? AND status = 'pendente'
+                WHERE recipient = ? AND status IN ('pendente', 'enviado')
                 ORDER BY id
                 """,
                 (destinatario,)
             ).fetchall()
 
-            ids = [linha["id"] for linha in linhas]
-            if ids:
-                marcadores = ",".join("?" for _ in ids)
-                conexao.execute(
-                    f"UPDATE mensagens SET status = 'entregue' "
-                    f"WHERE id IN ({marcadores})",
-                    ids
-                )
-
             mensagens = []
             for linha in linhas:
                 if linha["payload"]:
                     try:
-                        mensagens.append(json.loads(linha["payload"]))
+                        mensagem = json.loads(linha["payload"])
+                        mensagem["id"] = linha["id"]
+                        mensagens.append(mensagem)
                         continue
                     except json.JSONDecodeError:
                         pass
@@ -107,9 +100,22 @@ class RepositorioMensagens:
                     "destinatario": linha["recipient"],
                     "timestamp": linha["timestamp"],
                     "texto": linha["texto"],
-                    "status": "entregue"
+                    "status": linha["status"]
                 })
             return mensagens
+
+    def marcar_status(self, mensagem_id, status):
+        with self._lock, conectar() as conexao:
+            conexao.execute(
+                "UPDATE mensagens SET status = ? WHERE id = ?",
+                (status, mensagem_id)
+            )
+
+    def listar_e_remover(self, destinatario):
+        mensagens = self.listar_pendentes(destinatario)
+        for mensagem in mensagens:
+            self.marcar_status(mensagem["id"], "entregue")
+        return mensagens
 
     def marcar_lida(self, mensagem_id):
         with self._lock, conectar() as conexao:
@@ -122,7 +128,7 @@ class RepositorioMensagens:
         with self._lock, conectar() as conexao:
             cursor = conexao.execute(
                 "DELETE FROM mensagens "
-                "WHERE recipient = ? AND status = 'pendente'",
+                "WHERE recipient = ? AND status IN ('pendente', 'enviado')",
                 (destinatario,)
             )
             return cursor.rowcount

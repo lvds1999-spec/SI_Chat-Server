@@ -9,6 +9,8 @@ def conectar():
     conexao = sqlite3.connect(ARQUIVO_BANCO, timeout=30)
     conexao.row_factory = sqlite3.Row
     conexao.execute("PRAGMA foreign_keys = ON")
+    conexao.execute("PRAGMA busy_timeout = 30000")
+    conexao.execute("PRAGMA journal_mode = WAL")
     return conexao
 
 
@@ -31,8 +33,8 @@ def inicializar():
                 timestamp TEXT,
                 texto TEXT NOT NULL,
                 payload TEXT,
-                status TEXT NOT NULL DEFAULT 'pendente'
-                    CHECK (status IN ('pendente', 'entregue', 'lido'))
+                status TEXT NOT NULL DEFAULT 'enviado'
+                    CHECK (status IN ('enviado', 'pendente', 'entregue', 'lido'))
             );
 
             CREATE INDEX IF NOT EXISTS idx_mensagens_recipient_status
@@ -73,6 +75,36 @@ def _garantir_colunas_usuarios(conexao):
 
 
 def _garantir_colunas_mensagens(conexao):
+    definicao = conexao.execute(
+        "SELECT sql FROM sqlite_master "
+        "WHERE type = 'table' AND name = 'mensagens'"
+    ).fetchone()[0]
+    if "'enviado'" not in definicao:
+        conexao.execute("ALTER TABLE mensagens RENAME TO mensagens_legado")
+        conexao.execute(
+            """
+            CREATE TABLE mensagens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender TEXT NOT NULL,
+                recipient TEXT NOT NULL,
+                timestamp TEXT,
+                texto TEXT NOT NULL,
+                payload TEXT,
+                status TEXT NOT NULL DEFAULT 'enviado'
+                    CHECK (status IN ('enviado', 'pendente', 'entregue', 'lido'))
+            )
+            """
+        )
+        conexao.execute(
+            """
+            INSERT INTO mensagens
+                (id, sender, recipient, timestamp, texto, payload, status)
+            SELECT id, sender, recipient, timestamp, texto, payload, status
+            FROM mensagens_legado
+            """
+        )
+        conexao.execute("DROP TABLE mensagens_legado")
+
     colunas = {
         linha["name"]
         for linha in conexao.execute("PRAGMA table_info(mensagens)")
