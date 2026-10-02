@@ -2,6 +2,17 @@
 
 Servidor TCP para aplicativo de chat.
 
+## Arquitetura
+
+`server.py` é o único ponto de entrada e coordena as conexões TCP. O código da aplicação fica organizado por responsabilidade:
+
+- `src/dominio/`: regras de registro e autenticação.
+- `src/seguranca/`: handshake de canal, cifragem, derivação de chaves e assinaturas.
+- `src/infraestrutura/rede/`: protocolo JSON transportado no canal seguro.
+- `src/infraestrutura/persistencia/`: banco SQLite e repositórios de usuários, contatos e mensagens.
+
+Execute o servidor com `python server.py` na raiz do projeto.
+
 ## Como executar
 
 1. Abra um terminal na pasta do projeto.
@@ -25,4 +36,6 @@ Usuários usam `senha_hash` Argon2id e `salt` aleatório. Um login deve informar
 
 O evento `solicitar_chave_publica` retorna a chave pública cadastrada do destinatário. Depois que o cliente conclui o acordo E2E, envia `handshake_concluido`; o servidor registra o par remetente/destinatário. Mensagens são encaminhadas como pacotes opacos, sem interpretação do conteúdo cifrado. Uma mensagem para destinatário offline só entra na fila se esse handshake existir; caso contrário, o remetente recebe `erro` com código `handshake_ausente`.
 
-Os dados também são mantidos no banco SQLite `chat.db`, criado automaticamente na raiz do projeto. A tabela `usuarios` armazena usuários e senhas, e a tabela `contatos` mantém a lista permanente de cada usuário. A tabela `mensagens` possui `id`, `sender`, `recipient`, `timestamp`, `texto` e `status` (`pendente`, `entregue` ou `lido`). Mensagens pendentes são entregues no próximo login. O arquivo `chat.db` pode ser aberto no VS Code com uma extensão SQLite.
+Os dados são mantidos no banco SQLite `chat.db`, gerado automaticamente na raiz na primeira execução. A tabela `usuarios` armazena usuários e hashes de senha; a tabela SQL `contatos` é a única fonte de verdade para as listas de contatos. A tabela `mensagens` possui `id`, `sender`, `recipient`, `timestamp`, `texto`, `payload` e `status` (`pendente`, `entregue` ou `lido`). Mensagens pendentes são entregues no próximo login. O arquivo `chat.db` pode ser aberto no VS Code com uma extensão SQLite e não é versionado.
+
+`usuarios.json` e `mensagens_offline.json` são somente fontes de importação de dados legados quando as tabelas correspondentes estão vazias; novas alterações são persistidas no SQLite.

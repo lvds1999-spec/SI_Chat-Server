@@ -5,7 +5,7 @@ import threading
 
 from argon2.low_level import Type, hash_secret_raw
 
-from persistencia.banco import conectar
+from src.infraestrutura.persistencia.banco import conectar
 
 
 ARQUIVO_USUARIOS = "usuarios.json"
@@ -64,7 +64,7 @@ class RepositorioUsuarios:
                 pass
 
     def _migrar_json_se_necessario(self):
-        caminho = Path(__file__).resolve().parent.parent / ARQUIVO_USUARIOS
+        caminho = Path(__file__).resolve().parents[3] / ARQUIVO_USUARIOS
 
         if not caminho.exists():
             return

@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 
 
-ARQUIVO_BANCO = Path(__file__).resolve().parent.parent / "chat.db"
+ARQUIVO_BANCO = Path(__file__).resolve().parents[3] / "chat.db"
 
 
 def conectar():
@@ -46,9 +46,6 @@ def inicializar():
                 FOREIGN KEY (contato) REFERENCES usuarios (usuario)
             );
 
-            CREATE TABLE IF NOT EXISTS migracoes (
-                nome TEXT PRIMARY KEY
-            );
             """
         )
         _garantir_colunas_usuarios(conexao)

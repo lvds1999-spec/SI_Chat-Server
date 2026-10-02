@@ -3,7 +3,7 @@ import os
 import socket
 import threading
 
-from Protocolo.Rede.protocolo import (
+from src.infraestrutura.rede.protocolo import (
     criar_entrega_mensagem,
     criar_aviso_digitando,
     criar_aviso_novo_dispositivo,
@@ -18,10 +18,10 @@ from Protocolo.Rede.protocolo import (
     enviar_evento,
     ler_eventos,
 )
-from Protocolo.Rede.dominio.servico_chat import ServicoChat
-from persistencia.repositorio_mensagens import RepositorioMensagens
-from persistencia.repositorio_usuarios import RepositorioUsuarios
-from persistencia.repositorio_contatos import RepositorioContatos
+from src.dominio.servico_chat import ServicoChat
+from src.infraestrutura.persistencia.repositorio_mensagens import RepositorioMensagens
+from src.infraestrutura.persistencia.repositorio_usuarios import RepositorioUsuarios
+from src.infraestrutura.persistencia.repositorio_contatos import RepositorioContatos
 from src.seguranca import ErroSeguranca, SessaoSegura
 from src.seguranca.assinatura import (
     chave_publica_corresponde,

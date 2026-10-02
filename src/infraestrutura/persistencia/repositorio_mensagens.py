@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import threading
 
-from persistencia.banco import conectar
+from src.infraestrutura.persistencia.banco import conectar
 
 
 ARQUIVO_MENSAGENS = "mensagens_offline.json"
@@ -15,7 +15,7 @@ class RepositorioMensagens:
         self._migrar_json_se_necessario()
 
     def _migrar_json_se_necessario(self):
-        caminho = Path(__file__).resolve().parent.parent / ARQUIVO_MENSAGENS
+        caminho = Path(__file__).resolve().parents[3] / ARQUIVO_MENSAGENS
 
         if not caminho.exists():
             return
