@@ -7,6 +7,7 @@ from src.infraestrutura.rede.protocolo import (
     criar_entrega_mensagem,
     criar_aviso_digitando,
     criar_aviso_novo_dispositivo,
+    criar_mensagem_status,
     criar_desafio_login,
     criar_resposta_chave_publica,
     criar_lista_contatos,
@@ -41,6 +42,8 @@ usuarios_online = {}
 usuarios_online_lock = threading.Lock()
 handshakes_realizados = set()
 handshakes_lock = threading.Lock()
+locks_usuarios = {}
+locks_usuarios_lock = threading.Lock()
 
 
 def _chave_handshake(usuario_a, usuario_b):
@@ -62,6 +65,11 @@ def _limpar_handshakes(usuario):
         handshakes_realizados.difference_update(
             par for par in handshakes_realizados if usuario in par
         )
+
+
+def _lock_usuario(usuario):
+    with locks_usuarios_lock:
+        return locks_usuarios.setdefault(usuario, threading.Lock())
 
 
 def criar_lista_contatos_atualizada(usuario):
@@ -443,9 +451,10 @@ class ClientHandler(threading.Thread):
         if tipo == "logout":
             usuario = self.usuario
             if usuario is not None:
-                with usuarios_online_lock:
-                    if usuarios_online.get(usuario) is self:
-                        usuarios_online.pop(usuario)
+                with _lock_usuario(usuario):
+                    with usuarios_online_lock:
+                        if usuarios_online.get(usuario) is self:
+                            usuarios_online.pop(usuario)
                 self.usuario = None
                 transmitir_para_conectados({
                     "evento": "presenca",
@@ -519,24 +528,10 @@ class ClientHandler(threading.Thread):
         mensagem["remetente"] = self.usuario
         mensagem["destinatario"] = destinatario
 
-        with usuarios_online_lock:
-            cliente_destinatario = usuarios_online.get(destinatario)
+        with _lock_usuario(destinatario):
+            with usuarios_online_lock:
+                cliente_destinatario = usuarios_online.get(destinatario)
 
-        if cliente_destinatario is not None:
-            try:
-                cliente_destinatario.enviar(mensagem)
-            except (ConnectionError, OSError):
-                if not _handshake_existe(self.usuario, destinatario):
-                    self.enviar({
-                        "evento": "erro",
-                        "codigo": "handshake_ausente",
-                        "mensagem": (
-                            "Não existe handshake prévio com o destinatário."
-                        ),
-                    })
-                    return
-                repositorio_mensagens.adicionar(destinatario, mensagem)
-        else:
             if not _handshake_existe(self.usuario, destinatario):
                 self.enviar({
                     "evento": "erro",
@@ -546,7 +541,27 @@ class ClientHandler(threading.Thread):
                     ),
                 })
                 return
-            repositorio_mensagens.adicionar(destinatario, mensagem)
+
+            mensagem_id = repositorio_mensagens.adicionar(
+                destinatario,
+                mensagem,
+                status="enviado",
+            )
+            mensagem["id"] = mensagem_id
+
+            status = "enviado"
+            if cliente_destinatario is not None:
+                try:
+                    cliente_destinatario.enviar(mensagem)
+                except (ConnectionError, OSError):
+                    with usuarios_online_lock:
+                        if usuarios_online.get(destinatario) is cliente_destinatario:
+                            usuarios_online.pop(destinatario)
+                else:
+                    repositorio_mensagens.marcar_status(mensagem_id, "entregue")
+                    status = "entregue"
+
+        self.enviar(criar_mensagem_status(mensagem_id, status))
 
         self.enviar(criar_entrega_mensagem(
             self.usuario,
@@ -561,13 +576,33 @@ class ClientHandler(threading.Thread):
         algoritmo,
         chave_publica,
     ):
-        with usuarios_online_lock:
-            cliente_anterior = usuarios_online.get(usuario)
-            usuarios_online[usuario] = self
-            self.usuario = usuario
+        with _lock_usuario(usuario):
+            with usuarios_online_lock:
+                cliente_anterior = usuarios_online.get(usuario)
+                usuarios_online[usuario] = self
+                self.usuario = usuario
 
-            if cliente_anterior is not None and cliente_anterior is not self:
-                cliente_anterior.usuario = None
+                if cliente_anterior is not None and cliente_anterior is not self:
+                    cliente_anterior.usuario = None
+
+            if novo_dispositivo:
+                _limpar_handshakes(usuario)
+                repositorio_mensagens.descartar_pendentes(usuario)
+            else:
+                mensagens_offline = repositorio_mensagens.listar_pendentes(
+                    usuario
+                )
+                for mensagem_offline in mensagens_offline:
+                    self.enviar(mensagem_offline)
+                    repositorio_mensagens.marcar_status(
+                        mensagem_offline["id"],
+                        "entregue",
+                    )
+                    self._notificar_status(
+                        mensagem_offline.get("remetente"),
+                        mensagem_offline["id"],
+                        "entregue",
+                    )
 
         if cliente_anterior is not None and cliente_anterior is not self:
             cliente_anterior.fechar()
@@ -590,8 +625,6 @@ class ClientHandler(threading.Thread):
         )
 
         if novo_dispositivo:
-            _limpar_handshakes(usuario)
-            repositorio_mensagens.descartar_pendentes(usuario)
             self._avisar_novo_dispositivo(
                 usuario,
                 algoritmo,
@@ -599,9 +632,17 @@ class ClientHandler(threading.Thread):
             )
             return
 
-        mensagens_offline = repositorio_mensagens.listar_e_remover(usuario)
-        for mensagem_offline in mensagens_offline:
-            self.enviar(mensagem_offline)
+    def _notificar_status(self, remetente, mensagem_id, status):
+        if not remetente:
+            return
+        with usuarios_online_lock:
+            cliente = usuarios_online.get(remetente)
+        if cliente is None:
+            return
+        try:
+            cliente.enviar(criar_mensagem_status(mensagem_id, status))
+        except (ConnectionError, OSError):
+            pass
 
     def _avisar_novo_dispositivo(self, usuario, algoritmo, chave_publica):
         aviso = criar_aviso_novo_dispositivo(
@@ -631,10 +672,12 @@ class ClientHandler(threading.Thread):
 
         usuario_desconectado = None
         if self.usuario is not None:
-            with usuarios_online_lock:
-                if usuarios_online.get(self.usuario) is self:
-                    usuarios_online.pop(self.usuario)
-                    usuario_desconectado = self.usuario
+            usuario = self.usuario
+            with _lock_usuario(usuario):
+                with usuarios_online_lock:
+                    if usuarios_online.get(usuario) is self:
+                        usuarios_online.pop(usuario)
+                        usuario_desconectado = usuario
 
         if usuario_desconectado is not None:
             transmitir_para_conectados({

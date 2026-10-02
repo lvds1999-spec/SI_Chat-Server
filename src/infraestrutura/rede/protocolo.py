@@ -23,6 +23,7 @@ RESPOSTA_REMOVER_CONTATO = "resposta_remover_contato"
 
 MENSAGEM = "mensagem"
 ENTREGA_MENSAGEM = "entrega_mensagem"
+MENSAGEM_STATUS = "mensagem_status"
 
 DIGITANDO_INICIO = "digitando_inicio"
 DIGITANDO_FIM = "digitando_fim"
@@ -165,6 +166,14 @@ def criar_entrega_mensagem(remetente, destinatario, timestamp):
         "remetente": remetente,
         "destinatario": destinatario,
         "timestamp": timestamp
+    }
+
+
+def criar_mensagem_status(mensagem_id, status):
+    return {
+        "evento": MENSAGEM_STATUS,
+        "id": mensagem_id,
+        "status": status,
     }
 
 
